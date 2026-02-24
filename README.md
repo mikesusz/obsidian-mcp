@@ -47,17 +47,17 @@ Or via the installed script:
 obsidian-mcp
 ```
 
-The server communicates over stdio and is meant to be launched by an MCP host (e.g. MstyStudio).
+The server communicates over stdio and is launched by your MCP host.
 
-## MstyStudio Configuration
+## MCP Client Configuration
 
-Add the following to your MstyStudio MCP servers config:
+Most MCP clients that support stdio servers accept a configuration block like this:
 
 ```json
 {
   "mcpServers": {
     "obsidian": {
-      "command": "python",
+      "command": "/path/to/obsidian-mcp/.venv/bin/python",
       "args": ["-m", "obsidian_mcp.server"],
       "env": {
         "VAULT_PATH": "/path/to/your/vault"
@@ -67,8 +67,9 @@ Add the following to your MstyStudio MCP servers config:
 }
 ```
 
-> If you installed into a virtualenv, use the full path to that Python binary, e.g.
-> `"/path/to/obsidian-mcp/.venv/bin/python"`.
+Use the full path to the Python binary inside your virtualenv so the correct dependencies are picked up. The `VAULT_PATH` env var can be set here instead of (or in addition to) the `.env` file — values passed by the client take precedence.
+
+Consult your MCP client's documentation for where to place this config.
 
 ## Available Tools
 
