@@ -1,4 +1,4 @@
-"""Obsidian MCP server - read-only vault access via stdio transport."""
+"""Obsidian MCP server - vault access via stdio transport."""
 
 from __future__ import annotations
 
@@ -10,7 +10,15 @@ import mcp.types as types
 from dotenv import load_dotenv
 from mcp.server import Server
 
-from .vault import get_note, list_notes, search_notes
+from .vault import (
+    append_to_note,
+    create_note_from_template,
+    get_note,
+    list_notes,
+    list_templates,
+    list_writable_notes,
+    search_notes,
+)
 
 load_dotenv()
 
@@ -72,6 +80,72 @@ async def handle_list_tools() -> list[types.Tool]:
                 "required": [],
             },
         ),
+        types.Tool(
+            name="list_writable_notes",
+            description="Show which notes support write (append) operations and whether they currently exist.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.Tool(
+            name="append_to_note",
+            description=(
+                "Append content to the end of a whitelisted note. "
+                "Only notes returned by list_writable_notes can be written to. "
+                "Use list_writable_notes first if unsure which notes are available."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_path": {
+                        "type": "string",
+                        "description": "Filename of the writable note (e.g. 'books.md'). Must be in the whitelist.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Text to append to the note.",
+                    },
+                    "add_timestamp": {
+                        "type": "boolean",
+                        "description": "If true (default), prepend a '## YYYY-MM-DD HH:MM' heading before the content.",
+                    },
+                },
+                "required": ["note_path", "content"],
+            },
+        ),
+        types.Tool(
+            name="list_templates",
+            description=(
+                "List all available templates in the vault's templates/ directory. "
+                "Use this before create_note_from_template to see what templates exist."
+            ),
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.Tool(
+            name="create_note_from_template",
+            description=(
+                "Create a new note at the vault root from an existing template. "
+                "The note is named '{template_name} {note_suffix}.md'. "
+                "Use list_templates first to see available templates."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "template_name": {
+                        "type": "string",
+                        "description": "Name of the template to use (e.g. 'PROJECT', 'New Book'). Must match a file in templates/.",
+                    },
+                    "note_suffix": {
+                        "type": "string",
+                        "description": "Custom name to append after the template name (e.g. 'deck replacement'). Letters, numbers, spaces, hyphens, underscores only. If omitted, a timestamp is used.",
+                    },
+                    "field_values": {
+                        "type": "object",
+                        "description": "Optional key-value pairs to pre-fill the note. Keys should match YAML frontmatter field names in the template (e.g. {'title': 'My Book', 'authors': 'Jane Smith'}). Keys not found in frontmatter will be matched against '# KEY:' headings in the body instead.",
+                        "additionalProperties": {"type": "string"},
+                    },
+                },
+                "required": ["template_name"],
+            },
+        ),
     ]
 
 
@@ -104,10 +178,47 @@ async def handle_call_tool(
             import json
             return [types.TextContent(type="text", text=json.dumps(results, indent=2))]
 
+        elif name == "list_writable_notes":
+            result = list_writable_notes(vault)
+            import json
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "append_to_note":
+            note_path = arguments.get("note_path", "")
+            content = arguments.get("content", "")
+            if not note_path:
+                raise ValueError("'note_path' argument is required")
+            if not content:
+                raise ValueError("'content' argument is required")
+            add_timestamp = arguments.get("add_timestamp", True)
+            result = append_to_note(vault, note_path, content, add_timestamp)
+            import json
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "list_templates":
+            result = list_templates(vault)
+            import json
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "create_note_from_template":
+            template_name = arguments.get("template_name", "")
+            if not template_name:
+                raise ValueError("'template_name' argument is required")
+            note_suffix = arguments.get("note_suffix") or None
+            field_values = arguments.get("field_values") or None
+            import sys, json
+            print(
+                f"[create_note_from_template] template={template_name!r} "
+                f"suffix={note_suffix!r} field_values={field_values!r}",
+                file=sys.stderr,
+            )
+            result = create_note_from_template(vault, template_name, note_suffix, field_values)
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
         else:
             raise ValueError(f"Unknown tool: {name}")
 
-    except (FileNotFoundError, IsADirectoryError, NotADirectoryError) as e:
+    except (FileNotFoundError, IsADirectoryError, NotADirectoryError, FileExistsError) as e:
         return [types.TextContent(type="text", text=f"Error: {e}")]
     except (ValueError, PermissionError, RuntimeError) as e:
         return [types.TextContent(type="text", text=f"Error: {e}")]
