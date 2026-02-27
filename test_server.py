@@ -1,8 +1,8 @@
 """
 Quick test harness for the obsidian-mcp server.
 
-Spawns the server as a subprocess over stdio (exactly how MstyStudio would)
-and exercises each tool, printing the raw results.
+Spawns the server as a subprocess over stdio and exercises each tool,
+printing results so you can verify the MCP communication layer end-to-end.
 
 Usage:
     python test_server.py [--vault /path/to/vault] [--note "relative/path.md"] [--query "search term"]
@@ -88,7 +88,7 @@ async def run_tests(vault_path: str, note_path: str | None, query: str) -> None:
             tool_names = [t.name for t in tools]
             ok(f"Tools advertised: {tool_names}")
 
-            expected = {"search_notes", "get_note", "list_notes"}
+            expected = {"search_notes", "get_note", "list_notes", "list_writable_notes", "append_to_note", "list_templates", "create_note_from_template"}
             missing = expected - set(tool_names)
             if missing:
                 err(f"Missing expected tools: {missing}")
@@ -193,6 +193,179 @@ async def run_tests(vault_path: str, note_path: str | None, query: str) -> None:
                     ok(f"Returned {len(results)} result(s) (expected 0)")
                 except json.JSONDecodeError:
                     warn(f"Response is not JSON:\n{text}")
+
+            # ── list_writable_notes ───────────────────────────────────────
+            header("list_writable_notes")
+            r = await session.call_tool("list_writable_notes", {})
+            text = r.content[0].text if r.content else ""
+            if r.isError:
+                err(f"Tool returned error:\n{text}")
+            else:
+                try:
+                    data = json.loads(text)
+                    writable = data.get("writable_notes", [])
+                    ok(f"Whitelist has {len(writable)} note(s)")
+                    for w in writable:
+                        status = "exists" if w["exists"] else "not yet created"
+                        print(f"  {w['path']:20s}  [{status}]  {w['purpose']}")
+                except json.JSONDecodeError:
+                    warn(f"Response is not JSON:\n{text}")
+
+            # ── append_to_note ────────────────────────────────────────────
+            header("append_to_note  (__scratch.md, with timestamp)")
+            r = await session.call_tool(
+                "append_to_note",
+                {"note_path": "__scratch.md", "content": "test harness append — phase 2", "add_timestamp": True},
+            )
+            text = r.content[0].text if r.content else ""
+            if r.isError:
+                err(f"Tool returned error:\n{text}")
+            else:
+                try:
+                    result = json.loads(text)
+                    if result.get("success"):
+                        ok(result.get("message", "ok"))
+                        print(f"  Appended: {result.get('appended_content', '')!r}")
+                    else:
+                        warn(f"success=false: {result}")
+                except json.JSONDecodeError:
+                    warn(f"Response is not JSON:\n{text}")
+
+            # ── append_to_note (no timestamp) ─────────────────────────────
+            header("append_to_note  (books.md, no timestamp)")
+            r = await session.call_tool(
+                "append_to_note",
+                {"note_path": "books.md", "content": "- test entry (safe to delete)", "add_timestamp": False},
+            )
+            text = r.content[0].text if r.content else ""
+            if r.isError:
+                err(f"Tool returned error:\n{text}")
+            else:
+                try:
+                    result = json.loads(text)
+                    if result.get("success"):
+                        ok(result.get("message", "ok"))
+                    else:
+                        warn(f"success=false: {result}")
+                except json.JSONDecodeError:
+                    warn(f"Response is not JSON:\n{text}")
+
+            # ── append_to_note (non-whitelisted — expect error) ───────────
+            header("append_to_note  (non-whitelisted file — expect error)")
+            r = await session.call_tool(
+                "append_to_note",
+                {"note_path": "some_random_note.md", "content": "should be blocked"},
+            )
+            text = r.content[0].text if r.content else ""
+            if text.startswith("Error:"):
+                ok(f"Blocked as expected: {text}")
+            else:
+                err(f"Expected a whitelist error, got:\n{text}")
+
+            # ── append_to_note (path traversal — expect error) ────────────
+            header("append_to_note  (path traversal attempt — expect error)")
+            r = await session.call_tool(
+                "append_to_note",
+                {"note_path": "../etc/passwd", "content": "should be blocked"},
+            )
+            text = r.content[0].text if r.content else ""
+            if text.startswith("Error:"):
+                ok(f"Blocked as expected: {text}")
+            else:
+                err(f"Expected a whitelist error, got:\n{text}")
+
+            # ── list_templates ────────────────────────────────────────────
+            header("list_templates")
+            r = await session.call_tool("list_templates", {})
+            text = r.content[0].text if r.content else ""
+            template_names: list[str] = []
+            if r.isError or text.startswith("Error:"):
+                warn(f"list_templates returned error (templates/ may not exist): {text}")
+            else:
+                try:
+                    data = json.loads(text)
+                    templates = data.get("templates", [])
+                    template_names = [t["name"] for t in templates]
+                    ok(f"Found {len(templates)} template(s): {template_names}")
+                    for t in templates:
+                        print(f"  {t['name']:25s}  {t['description']}")
+                except json.JSONDecodeError:
+                    warn(f"Response is not JSON:\n{text}")
+
+            # ── list_templates (no templates dir) ─────────────────────────
+            # Already covered above gracefully — if templates/ exists we test creation below
+
+            # ── create_note_from_template ─────────────────────────────────
+            if template_names:
+                first_template = template_names[0]
+                test_suffix = "test-harness-delete-me"
+                header(f"create_note_from_template  (template={first_template!r}, suffix={test_suffix!r})")
+                r = await session.call_tool(
+                    "create_note_from_template",
+                    {"template_name": first_template, "note_suffix": test_suffix},
+                )
+                text = r.content[0].text if r.content else ""
+                if r.isError:
+                    err(f"Tool returned error:\n{text}")
+                else:
+                    try:
+                        result = json.loads(text)
+                        if result.get("success"):
+                            ok(result.get("message", "ok"))
+                            print(f"  Created: {result.get('file_path')}")
+                            print(f"  From:    {result.get('template_used')}")
+                        else:
+                            warn(f"success=false: {result}")
+                    except json.JSONDecodeError:
+                        warn(f"Response is not JSON:\n{text}")
+
+                # ── duplicate creation — expect error ─────────────────────
+                header(f"create_note_from_template  (duplicate — expect error)")
+                r = await session.call_tool(
+                    "create_note_from_template",
+                    {"template_name": first_template, "note_suffix": test_suffix},
+                )
+                text = r.content[0].text if r.content else ""
+                if text.startswith("Error:"):
+                    ok(f"Duplicate blocked as expected: {text}")
+                else:
+                    err(f"Expected duplicate error, got:\n{text}")
+
+            # ── invalid template name — expect error ──────────────────────
+            header("create_note_from_template  (invalid template — expect error)")
+            r = await session.call_tool(
+                "create_note_from_template",
+                {"template_name": "DOES_NOT_EXIST_TEMPLATE"},
+            )
+            text = r.content[0].text if r.content else ""
+            if text.startswith("Error:"):
+                ok(f"Missing template caught: {text}")
+            else:
+                err(f"Expected not-found error, got:\n{text}")
+
+            # ── invalid suffix characters — expect error ───────────────────
+            header("create_note_from_template  (invalid suffix chars — expect error)")
+            r = await session.call_tool(
+                "create_note_from_template",
+                {"template_name": "PROJECT", "note_suffix": "bad/name/../here"},
+            )
+            text = r.content[0].text if r.content else ""
+            if text.startswith("Error:"):
+                ok(f"Invalid chars blocked: {text}")
+            else:
+                err(f"Expected validation error, got:\n{text}")
+
+            # ── path traversal in template_name — expect error ────────────
+            header("create_note_from_template  (path traversal — expect error)")
+            r = await session.call_tool(
+                "create_note_from_template",
+                {"template_name": "../etc/passwd"},
+            )
+            text = r.content[0].text if r.content else ""
+            if text.startswith("Error:"):
+                ok(f"Traversal blocked: {text}")
+            else:
+                err(f"Expected validation error, got:\n{text}")
 
     header("done")
     ok("Server exited cleanly")
