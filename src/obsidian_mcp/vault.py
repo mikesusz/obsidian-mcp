@@ -9,20 +9,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
+import json
+
 import frontmatter
 
 
 IGNORED_DIRS = {".obsidian"}
 
-# Hardcoded whitelist of notes that support write operations.
-# All paths are relative to the vault root and must be in the root (no subfolders).
-# To add a new writable note, edit this dict in source.
-WRITABLE_NOTES: dict[str, str] = {
+CONFIG_FILENAME = ".obsidian-mcp.config.json"
+
+# Default writable notes used when no config file is present in the vault.
+_DEFAULT_WRITABLE_NOTES: dict[str, str] = {
     "__INBOX.md": "Quick capture inbox",
-    "__scratch.md": "Temporary notes and thoughts",
-    "bands.md": "Music to check out",
-    "books.md": "Reading list",
+    "__scratch.md": "Temporary scratch pad",
 }
+
+
+def _load_writable_notes(vault_path: str) -> dict[str, str]:
+    """Load writable notes from vault config file, falling back to defaults."""
+    config_path = Path(vault_path).expanduser().resolve() / CONFIG_FILENAME
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            entries = config.get("writable_notes", [])
+            return {entry["path"]: entry["description"] for entry in entries}
+        except (KeyError, json.JSONDecodeError, OSError):
+            pass  # Fall through to defaults on any parse error
+    return _DEFAULT_WRITABLE_NOTES
 
 
 class NoteInfo(TypedDict):
@@ -227,7 +240,7 @@ def list_writable_notes(vault_path: str) -> dict[str, list[WritableNoteInfo]]:
             exists=(root / note_path).exists(),
             purpose=purpose,
         )
-        for note_path, purpose in WRITABLE_NOTES.items()
+        for note_path, purpose in _load_writable_notes(vault_path).items()
     ]
     return {"writable_notes": notes}
 
@@ -241,10 +254,11 @@ def append_to_note(
     """Append content to a whitelisted note, optionally prefixed with a timestamp heading."""
     # Safety: exact whitelist lookup — also implicitly blocks path traversal
     # because traversal strings like "../etc/passwd" are simply not in the dict.
-    if note_path not in WRITABLE_NOTES:
+    writable_notes = _load_writable_notes(vault_path)
+    if note_path not in writable_notes:
         raise PermissionError(
             f"'{note_path}' is not in the writable whitelist. "
-            f"Writable notes: {list(WRITABLE_NOTES)}"
+            f"Writable notes: {list(writable_notes)}"
         )
 
     # Belt-and-suspenders: reject anything with a path separator even if

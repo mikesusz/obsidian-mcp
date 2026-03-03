@@ -1,0 +1,24 @@
+{
+  "writable_notes": [
+    {
+      "path": "__INBOX.md",
+      "description": "Quick capture inbox"
+    },
+    {
+      "path": "__scratch.md",
+      "description": "Temporary scratch pad"
+    },
+    {
+      "path": "books.md",
+      "description": "Reading list"
+    },
+    {
+      "path": "bands.md",
+      "description": "Music to check out"
+    },
+    {
+      "path": "recipes.md",
+      "description": "Recipe ideas"
+    }
+  ]
+}
