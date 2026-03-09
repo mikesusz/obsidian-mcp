@@ -2,11 +2,13 @@
 
 A stdio MCP server that gives LLMs read and (limited) write access to an Obsidian vault. Full read access to all notes; append-only write access to a configurable list of notes; and structured note creation from templates.
 
+_Note:_ if you want a simple, read-only local Obsidian MCP Server, you can use the [1.0 Release of this project](https://github.com/mikesusz/obsidian-mcp/releases/tag/1.0), which includes no file-write capabilities whatsoever.
+
 ## Quick Start
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-username/obsidian-mcp
+git clone https://github.com/mikesusz/obsidian-mcp
 cd obsidian-mcp
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -31,7 +33,7 @@ cp .obsidian-mcp.config.example.json /path/to/your/vault/.obsidian-mcp.config.js
 ## Installation
 
 ```bash
-git clone https://github.com/your-username/obsidian-mcp
+git clone https://github.com/mikesusz/obsidian-mcp
 cd obsidian-mcp
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -417,3 +419,15 @@ Your MCP client keeps the server process alive. Restart the client (e.g. quit an
 
 **`field_values` not updating frontmatter**
 Check that the key names exactly match the YAML frontmatter keys in the template (case-sensitive). Use `fields_applied` in the response to confirm what was actually written.
+
+## License
+
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) for the full text.
+
+You are free to use, modify, and distribute this software under the AGPL v3 terms. If you run a modified version as a network service, you must make the modified source available to users of that service.
+
+---
+
+## Feedback
+
+This project is a work in progress, and may have bugs. You can submit [a Github Issue](https://github.com/mikesusz/obsidian-mcp/issues) if you encounter and problems, and I will probably fix it! Because I don't want to have that problem, either.
