@@ -430,4 +430,4 @@ You are free to use, modify, and distribute this software under the AGPL v3 term
 
 ## Feedback
 
-This project is a work in progress, and may have bugs. You can submit [a Github Issue](https://github.com/mikesusz/obsidian-mcp/issues) if you encounter and problems, and I will probably fix it! Because I don't want to have that problem, either.
+This project is a work in progress, and may have bugs. You can submit [a Github Issue](https://github.com/mikesusz/obsidian-mcp/issues) if you encounter any problems, and I will probably fix it! Because I don't want to have that problem, either.
