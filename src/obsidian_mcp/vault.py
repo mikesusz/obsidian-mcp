@@ -108,6 +108,8 @@ def list_notes(vault_path: str, folder: str | None = None) -> list[NoteInfo]:
     for md_file in sorted(search_root.rglob("*.md")):
         if _is_ignored(md_file, root):
             continue
+        if not _is_agent_visible(md_file):
+            continue
         stat = md_file.stat()
         notes.append(
             NoteInfo(
@@ -135,6 +137,8 @@ def get_note(vault_path: str, note_path: str) -> NoteContent:
         raise ValueError(f"Not a markdown file: {note_path}")
     if _is_ignored(full_path, root):
         raise PermissionError(f"Note is in an ignored directory: {note_path}")
+    if not _is_agent_visible(full_path):
+        raise PermissionError(f"Note '{note_path}' is not accessible to agents")
 
     post = frontmatter.load(str(full_path))
     stat = full_path.stat()
@@ -191,6 +195,8 @@ def search_notes(vault_path: str, query: str, limit: int = 10) -> list[SearchRes
             continue
 
         post = frontmatter.loads(raw_text)
+        if _normalize_access(post.metadata.get("agent_access", "append")) == "hidden":
+            continue
         content = post.content
 
         title_match = query_lower in title.lower()
@@ -327,6 +333,12 @@ class CreateNoteResult(TypedDict):
     fields_applied: dict[str, str]
 
 
+class EditNoteResult(TypedDict):
+    success: bool
+    note_path: str
+    message: str
+
+
 def _replace_placeholders(content: str) -> str:
     """Replace {{PLACEHOLDER}} tokens with current date/time values."""
     now = datetime.now()
@@ -402,11 +414,165 @@ def list_templates(vault_path: str) -> dict[str, list[TemplateInfo]]:
     return {"templates": templates}
 
 
+def _resolve_note_path(vault_path: str, note_path: str) -> tuple[Path, Path]:
+    """Resolve and validate a note path inside the vault. Returns (root, full_path)."""
+    root = _resolve_vault(vault_path)
+    full_path = (root / note_path).resolve()
+    if not full_path.is_relative_to(root):
+        raise ValueError("note_path escapes vault root")
+    if not full_path.exists():
+        raise FileNotFoundError(f"Note not found: {note_path}")
+    if not full_path.is_file():
+        raise IsADirectoryError(f"Path is a directory, not a note: {note_path}")
+    if full_path.suffix.lower() != ".md":
+        raise ValueError(f"Not a markdown file: {note_path}")
+    if _is_ignored(full_path, root):
+        raise PermissionError(f"Note is in an ignored directory: {note_path}")
+    return root, full_path
+
+
+_LEGACY_ACCESS_MAP = {"full": "edit", "none": "read"}
+_ACCESS_LEVELS = {"hidden": 0, "read": 1, "append": 2, "edit": 3}
+
+
+def _normalize_access(raw: str) -> str:
+    """Map legacy values and return normalized agent_access string."""
+    return _LEGACY_ACCESS_MAP.get(raw, raw)
+
+
+def _is_agent_visible(full_path: Path) -> bool:
+    """Return False if note has agent_access: hidden (invisible to agents)."""
+    try:
+        post = frontmatter.loads(full_path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return True
+    access = _normalize_access(post.metadata.get("agent_access", "append"))
+    return access != "hidden"
+
+
+def _check_agent_access(full_path: Path, required: str) -> tuple[bool, str]:
+    """Check agent_access frontmatter permission. Returns (allowed, current_access)."""
+    post = frontmatter.loads(full_path.read_text(encoding="utf-8"))
+    current = _normalize_access(post.metadata.get("agent_access", "append"))
+    required_num = _ACCESS_LEVELS.get(required, 0)
+    current_num = _ACCESS_LEVELS.get(current, -1)
+    return current_num >= required_num, current
+
+
+def update_note(vault_path: str, note_path: str, new_content: str) -> EditNoteResult:
+    """Replace the body of a note, preserving its frontmatter. Requires agent_access: edit."""
+    root, full_path = _resolve_note_path(vault_path, note_path)
+    allowed, current = _check_agent_access(full_path, "edit")
+    if not allowed:
+        raise PermissionError(
+            f"Insufficient permissions. This note has agent_access: '{current}', "
+            "but this operation requires: 'edit'. "
+            "Add agent_access: 'edit' to the note's frontmatter to enable this operation."
+        )
+
+    post = frontmatter.loads(full_path.read_text(encoding="utf-8"))
+    post.content = new_content
+    full_path.write_text(frontmatter.dumps(post), encoding="utf-8")
+
+    ts_log = datetime.now().isoformat(timespec="seconds")
+    print(f"[{ts_log}] update_note: '{note_path}'", file=sys.stderr)
+
+    return EditNoteResult(
+        success=True,
+        note_path=_relative_str(full_path, root),
+        message=f"Note body updated: '{note_path}'",
+    )
+
+
+def replace_in_note(
+    vault_path: str, note_path: str, old_text: str, new_text: str
+) -> EditNoteResult:
+    """Find and replace text in a note body. Requires agent_access: edit."""
+    root, full_path = _resolve_note_path(vault_path, note_path)
+    allowed, current = _check_agent_access(full_path, "edit")
+    if not allowed:
+        raise PermissionError(
+            f"Insufficient permissions. This note has agent_access: '{current}', "
+            "but this operation requires: 'edit'. "
+            "Add agent_access: 'edit' to the note's frontmatter to enable this operation."
+        )
+
+    post = frontmatter.loads(full_path.read_text(encoding="utf-8"))
+    if old_text not in post.content:
+        raise ValueError(f"Text not found in note: {old_text!r}")
+
+    post.content = post.content.replace(old_text, new_text)
+    full_path.write_text(frontmatter.dumps(post), encoding="utf-8")
+
+    ts_log = datetime.now().isoformat(timespec="seconds")
+    print(f"[{ts_log}] replace_in_note: '{note_path}'", file=sys.stderr)
+
+    return EditNoteResult(
+        success=True,
+        note_path=_relative_str(full_path, root),
+        message=f"Replacement applied in '{note_path}'",
+    )
+
+
+def update_section(
+    vault_path: str, note_path: str, heading: str, new_content: str
+) -> EditNoteResult:
+    """Replace the content under a heading (preserves the heading). Requires agent_access: edit."""
+    root, full_path = _resolve_note_path(vault_path, note_path)
+    allowed, current = _check_agent_access(full_path, "edit")
+    if not allowed:
+        raise PermissionError(
+            f"Insufficient permissions. This note has agent_access: '{current}', "
+            "but this operation requires: 'edit'. "
+            "Add agent_access: 'edit' to the note's frontmatter to enable this operation."
+        )
+
+    post = frontmatter.loads(full_path.read_text(encoding="utf-8"))
+    body = post.content
+
+    # Find the heading line (exact match on the full line after stripping)
+    lines = body.splitlines(keepends=True)
+    heading_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == heading.strip():
+            heading_idx = i
+            break
+    if heading_idx is None:
+        raise ValueError(f"Heading '{heading}' not found in note")
+
+    # Find the next heading (any line starting with one or more '#')
+    _HEADING_RE = re.compile(r"^#{1,6}\s")
+    next_heading_idx = None
+    for i in range(heading_idx + 1, len(lines)):
+        if _HEADING_RE.match(lines[i]):
+            next_heading_idx = i
+            break
+
+    replacement = new_content if new_content.endswith("\n") else new_content + "\n"
+    if next_heading_idx is not None:
+        new_lines = lines[: heading_idx + 1] + [replacement] + lines[next_heading_idx:]
+    else:
+        new_lines = lines[: heading_idx + 1] + [replacement]
+
+    post.content = "".join(new_lines)
+    full_path.write_text(frontmatter.dumps(post), encoding="utf-8")
+
+    ts_log = datetime.now().isoformat(timespec="seconds")
+    print(f"[{ts_log}] update_section: '{note_path}' heading={heading!r}", file=sys.stderr)
+
+    return EditNoteResult(
+        success=True,
+        note_path=_relative_str(full_path, root),
+        message=f"Section '{heading}' updated in '{note_path}'",
+    )
+
+
 def create_note_from_template(
     vault_path: str,
     template_name: str,
     note_suffix: str | None = None,
     field_values: dict[str, str] | None = None,
+    agent_access: str | None = None,
 ) -> CreateNoteResult:
     """Create a new note in the vault root from a named template."""
     _validate_safe_name(template_name, "Template name")
@@ -468,6 +634,20 @@ def create_note_from_template(
         content = raw
 
     content = _replace_placeholders(content)
+
+    # Resolve {{AGENT_ACCESS}} placeholder: explicit param wins, else default to "append".
+    _valid_access = ("edit", "append", "read", "hidden", "full", "none")
+    if "{{AGENT_ACCESS}}" in content:
+        resolved_access = _normalize_access(agent_access) if agent_access in _valid_access else "append"
+        content = content.replace("{{AGENT_ACCESS}}", resolved_access)
+        applied["agent_access"] = resolved_access
+    elif agent_access in _valid_access:
+        # Template has a hardcoded value — explicit param overrides it via frontmatter.
+        post = frontmatter.loads(content)
+        if "agent_access" in post.metadata:
+            post.metadata["agent_access"] = _normalize_access(agent_access)
+            content = frontmatter.dumps(post)
+            applied["agent_access"] = _normalize_access(agent_access)
 
     output_path.write_text(content, encoding="utf-8")
 

@@ -2,6 +2,7 @@
 ---
 date: "{{TODAY}}"
 attendees: []
+agent_access: "edit"
 ---
 
 # MEETING TITLE:
