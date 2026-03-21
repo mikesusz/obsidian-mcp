@@ -279,6 +279,7 @@ Create a new note at the vault root from a named template. The file is named `{t
 - `template_name` (string, required) — name of the template, e.g. `"PROJECT"` or `"New Book"`
 - `note_suffix` (string, optional) — appended to the filename, e.g. `"deck replacement"` → `"PROJECT deck replacement.md"`. Letters, numbers, spaces, hyphens, underscores only.
 - `field_values` (object, optional) — pre-fill template fields. Keys match YAML frontmatter field names (e.g. `{"title": "My Book", "authors": "Jane Smith"}`). Keys not found in frontmatter will be matched against `# KEY:` headings in the body instead.
+- `agent_access` (string, optional) — permission level for agent access after creation: `"edit"`, `"append"` (default), `"read"`, or `"hidden"`. Overrides any value already in the template's `agent_access` frontmatter field. Infer from the user's phrasing (see [Agent access in templates](#agent-access-in-templates)).
 
 **Example result:**
 
@@ -303,6 +304,78 @@ create_note_from_template("New Book", "The Expanse", {"title": "The Expanse", "a
 
 create_note_from_template("MEETING_NOTES", "Q1 planning", {"attendees": "Alice and Bob and Carol"})
 → Creates "MEETING_NOTES Q1 planning.md" with attendees: ["Alice", "Bob", "Carol"]
+
+create_note_from_template("REFERENCE_DOC", "mechanical keyboards", agent_access="edit")
+→ Creates "REFERENCE_DOC mechanical keyboards.md" with agent_access: "edit"
+```
+
+---
+
+### `update_note`
+
+Replace the entire body of a note with new content. Frontmatter (including `agent_access`) is always preserved. Requires `agent_access: "edit"` in the note.
+
+**Input:**
+
+- `note_path` (string, required) — filename relative to vault root, e.g. `"My Note.md"`
+- `new_content` (string, required) — full replacement body text
+
+**Example result:**
+
+```json
+{
+  "success": true,
+  "note_path": "REFERENCE_DOC mechanical keyboards.md",
+  "message": "Note body updated: 'REFERENCE_DOC mechanical keyboards.md'"
+}
+```
+
+---
+
+### `replace_in_note`
+
+Find and replace a specific piece of text in a note body. Exact match, case-sensitive. Only operates on body content — frontmatter is never touched. Requires `agent_access: "edit"`.
+
+**Input:**
+
+- `note_path` (string, required) — filename relative to vault root
+- `old_text` (string, required) — exact text to find
+- `new_text` (string, required) — replacement text
+
+**Errors:**
+- `"Text not found in note: '...'"` — if `old_text` doesn't appear in the body
+
+---
+
+### `update_section`
+
+Replace the content beneath a specific heading, preserving the heading line itself. Content is replaced up to (but not including) the next heading, or end of file. Requires `agent_access: "edit"`.
+
+**Input:**
+
+- `note_path` (string, required) — filename relative to vault root
+- `heading` (string, required) — exact heading text, e.g. `"## Next Steps"` or `"SYNOPSIS:"`
+- `new_content` (string, required) — replacement content for that section
+
+**Errors:**
+- `"Heading '...' not found in note"` — if the heading doesn't exist
+
+---
+
+### Permission requirements
+
+| Tool | Required `agent_access` |
+| ---- | ----------------------- |
+| `get_note`, `search_notes`, `list_notes` | `"read"` or higher (invisible if `"hidden"`) |
+| `append_to_note` | whitelist-based (see [Writable Notes](#writable-notes)) |
+| `update_note` | `"edit"` |
+| `replace_in_note` | `"edit"` |
+| `update_section` | `"edit"` |
+
+If a note lacks the required `agent_access` value, all edit tools return:
+
+```
+Error: Insufficient permissions. This note has agent_access: 'append', but this operation requires: 'edit'. Add agent_access: 'edit' to the note's frontmatter to enable this operation.
 ```
 
 ---
@@ -344,9 +417,49 @@ source: ""
 
 The `templates/examples/` directory in this repo contains ready-to-use templates you can copy into your vault:
 
-- `JOURNAL.md` — Daily journal with date auto-filled
+- `JOURNAL.md` — Daily journal with date auto-filled (`agent_access: "append"`)
 - `RECIPE.md` — Recipe with source and ingredients
-- `MEETING_NOTES.md` — Meeting notes with attendees array
+- `MEETING_NOTES.md` — Meeting notes with attendees array (`agent_access: "edit"`)
+- `REFERENCE_DOC.md` — Reference document with dynamic `agent_access` via `{{AGENT_ACCESS}}`
+
+### Agent access in templates
+
+Templates can include an `agent_access` frontmatter field to declare how freely an agent should edit the note after creation:
+
+| Value | Meaning |
+| ------- | ------- |
+| `"edit"` | Agent can freely edit the note |
+| `"append"` | Agent should only add content, not edit existing text (safe default) |
+| `"read"` | Agent can view but not modify the note |
+| `"hidden"` | Agent cannot see, search, or access this note at all |
+
+**Hardcoded in template** (e.g. JOURNAL.md always appends):
+```markdown
+---
+date: "{{TODAY}}"
+agent_access: "append"
+---
+```
+
+**Dynamic via placeholder** (e.g. REFERENCE_DOC.md — set at creation time):
+```markdown
+---
+title: "{{TITLE}}"
+agent_access: "{{AGENT_ACCESS}}"
+---
+```
+
+When using the dynamic placeholder, pass `agent_access` to `create_note_from_template` and the value is inferred from the user's phrasing:
+
+| User says… | Inferred value |
+| --- | --- |
+| "you can edit/update/modify" or "fully editable" | `"edit"` |
+| "you can add to" or "append-only" | `"append"` |
+| No specific instruction | `"append"` (safe default) |
+| "read-only", "I'll edit this myself", "just create it" | `"read"` |
+| "this is private", "keep this hidden", "don't show this" | `"hidden"` |
+
+If `agent_access` is passed explicitly to `create_note_from_template`, it overrides whatever value the template has (hardcoded or placeholder).
 
 ### Template placeholders
 
@@ -362,6 +475,7 @@ The following `{{PLACEHOLDER}}` tokens are automatically replaced when a note is
 | `{{YEAR}}`      | `2026`                         |
 | `{{MONTH}}`     | `02`                           |
 | `{{DAY}}`       | `27`                           |
+| `{{AGENT_ACCESS}}` | `"append"` (resolved from the `agent_access` parameter, default `"append"`) |
 
 Placeholders are expanded after `field_values` are applied, so caller-supplied values always take precedence.
 

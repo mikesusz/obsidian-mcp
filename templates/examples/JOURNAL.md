@@ -1,6 +1,7 @@
 %% Daily journal entry %%
 ---
 date: "{{TODAY}}"
+agent_access: "append"
 ---
 
 # {{TODAY}} Journal

@@ -17,7 +17,10 @@ from .vault import (
     list_notes,
     list_templates,
     list_writable_notes,
+    replace_in_note,
     search_notes,
+    update_note,
+    update_section,
 )
 
 load_dotenv()
@@ -124,7 +127,12 @@ async def handle_list_tools() -> list[types.Tool]:
             description=(
                 "Create a new note at the vault root from an existing template. "
                 "The note is named '{template_name} {note_suffix}.md'. "
-                "Use list_templates first to see available templates."
+                "Use list_templates first to see available templates. "
+                "Infer agent_access from the user's phrasing: "
+                "'you can edit/update/modify' or 'fully editable' → 'edit'; "
+                "'read-only', 'I'll edit this myself', or 'just create it' → 'read'; "
+                "'this is private', 'keep this hidden', or 'don't show this' → 'hidden'; "
+                "no instruction or 'you can add to'/'append-only' → 'append' (default)."
             ),
             inputSchema={
                 "type": "object",
@@ -142,8 +150,86 @@ async def handle_list_tools() -> list[types.Tool]:
                         "description": "Optional key-value pairs to pre-fill the note. Keys should match YAML frontmatter field names in the template (e.g. {'title': 'My Book', 'authors': 'Jane Smith'}). Keys not found in frontmatter will be matched against '# KEY:' headings in the body instead.",
                         "additionalProperties": {"type": "string"},
                     },
+                    "agent_access": {
+                        "type": "string",
+                        "enum": ["edit", "append", "read", "hidden"],
+                        "description": "Permission level for agent access to this note. 'edit' = agent can edit freely; 'append' = agent can only add content (default); 'read' = agent can view but not modify; 'hidden' = agent cannot see, search, or access this note at all.",
+                    },
                 },
                 "required": ["template_name"],
+            },
+        ),
+        types.Tool(
+            name="update_note",
+            description=(
+                "Replace the entire body of a note with new content, preserving frontmatter. "
+                "Requires agent_access: 'edit' in the note's frontmatter."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_path": {
+                        "type": "string",
+                        "description": "Path to the note relative to vault root (e.g. 'My Note.md').",
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "New body content for the note (frontmatter is preserved).",
+                    },
+                },
+                "required": ["note_path", "new_content"],
+            },
+        ),
+        types.Tool(
+            name="replace_in_note",
+            description=(
+                "Find and replace a specific piece of text in a note body (exact match, case-sensitive). "
+                "Only operates on body content — never touches frontmatter. "
+                "Requires agent_access: 'edit' in the note's frontmatter."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_path": {
+                        "type": "string",
+                        "description": "Path to the note relative to vault root.",
+                    },
+                    "old_text": {
+                        "type": "string",
+                        "description": "Exact text to find (case-sensitive).",
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "Text to replace it with.",
+                    },
+                },
+                "required": ["note_path", "old_text", "new_text"],
+            },
+        ),
+        types.Tool(
+            name="update_section",
+            description=(
+                "Replace the content under a specific heading in a note. "
+                "The heading line itself is preserved; only the content below it (until the next heading) is replaced. "
+                "Requires agent_access: 'edit' in the note's frontmatter."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_path": {
+                        "type": "string",
+                        "description": "Path to the note relative to vault root.",
+                    },
+                    "heading": {
+                        "type": "string",
+                        "description": "Exact heading text to find (e.g. '## Next Steps' or 'SYNOPSIS:').",
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "New content to place under the heading.",
+                    },
+                },
+                "required": ["note_path", "heading", "new_content"],
             },
         ),
     ]
@@ -206,13 +292,52 @@ async def handle_call_tool(
                 raise ValueError("'template_name' argument is required")
             note_suffix = arguments.get("note_suffix") or None
             field_values = arguments.get("field_values") or None
+            agent_access = arguments.get("agent_access") or None
             import sys, json
             print(
                 f"[create_note_from_template] template={template_name!r} "
-                f"suffix={note_suffix!r} field_values={field_values!r}",
+                f"suffix={note_suffix!r} field_values={field_values!r} "
+                f"agent_access={agent_access!r}",
                 file=sys.stderr,
             )
-            result = create_note_from_template(vault, template_name, note_suffix, field_values)
+            result = create_note_from_template(vault, template_name, note_suffix, field_values, agent_access)
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "update_note":
+            note_path = arguments.get("note_path", "")
+            new_content = arguments.get("new_content", "")
+            if not note_path:
+                raise ValueError("'note_path' argument is required")
+            if not new_content:
+                raise ValueError("'new_content' argument is required")
+            import json
+            result = update_note(vault, note_path, new_content)
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "replace_in_note":
+            note_path = arguments.get("note_path", "")
+            old_text = arguments.get("old_text", "")
+            new_text = arguments.get("new_text", "")
+            if not note_path:
+                raise ValueError("'note_path' argument is required")
+            if not old_text:
+                raise ValueError("'old_text' argument is required")
+            import json
+            result = replace_in_note(vault, note_path, old_text, new_text)
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        elif name == "update_section":
+            note_path = arguments.get("note_path", "")
+            heading = arguments.get("heading", "")
+            new_content = arguments.get("new_content", "")
+            if not note_path:
+                raise ValueError("'note_path' argument is required")
+            if not heading:
+                raise ValueError("'heading' argument is required")
+            if not new_content:
+                raise ValueError("'new_content' argument is required")
+            import json
+            result = update_section(vault, note_path, heading, new_content)
             return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
         else:

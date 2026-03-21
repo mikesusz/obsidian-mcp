@@ -1,0 +1,138 @@
+Here's the enhanced spec for CC:
+
+---
+
+## Enhancement Part 2: Agent Access in Templates
+
+**Goal:** Allow templates to include `agent_access` field that can be set at creation time, making permission management part of the natural creation workflow.
+
+### Template Enhancement
+
+Templates can now include `{{AGENT_ACCESS}}` placeholder in frontmatter:
+
+```markdown
+---
+title: "{{TITLE}}"
+created: "{{DATE}}"
+agent_access: "{{AGENT_ACCESS}}"
+---
+
+# {{TITLE}}
+
+{{CONTENT}}
+```
+
+### Natural Language Inference
+
+When `create_note_from_template` is called, infer `agent_access` level from user's language:
+
+**"full" access triggers:**
+- "you can edit"
+- "you can update"
+- "fully editable"
+- "you can modify"
+
+**"append" access (default):**
+- "you can add to"
+- "append-only"
+- No specific instruction (use "append" as safe default)
+
+**"none" access:**
+- "read-only"
+- "I'll edit this myself"
+- "just create it"
+
+### Updated Tool Signature
+
+**`create_note_from_template`** - Add optional parameter:
+```typescript
+{
+  template: string,
+  output_filename: string,
+  fields: { [key: string]: string },
+  agent_access?: "full" | "append" | "none"  // NEW
+}
+```
+
+**Parameter behavior:**
+- If `agent_access` explicitly provided → use it
+- Else if template has `{{AGENT_ACCESS}}` → infer from natural language
+- Else if template has hardcoded value → keep template's value
+- Else → use "append" as safe default
+
+### Example Workflows
+
+**User:** "Create a reference doc about my mechanical keyboards that you can fully edit"
+
+**CC calls:**
+```typescript
+create_note_from_template({
+  template: "REFERENCE_DOC.md",
+  output_filename: "mechanical-keyboards-reference.md",
+  fields: {
+    TITLE: "Mechanical Keyboards Reference",
+    OVERVIEW: "A collection of details about my keyboard collection",
+    AGENT_ACCESS: "full"  // inferred from "you can fully edit"
+  }
+})
+```
+
+**Result:**
+```markdown
+---
+title: "Mechanical Keyboards Reference"
+created: "2026-03-24"
+agent_access: "full"
+---
+
+# Mechanical Keyboards Reference
+
+## Overview
+A collection of details about my keyboard collection
+
+## Details
+[Claude can now edit this section directly]
+```
+
+### Template Library Updates
+
+Update example templates to include the placeholder:
+
+**JOURNAL.md:**
+```markdown
+---
+date: "{{DATE}}"
+agent_access: "append"
+---
+```
+(Journals are typically append-only)
+
+**REFERENCE_DOC.md:**
+```markdown
+---
+title: "{{TITLE}}"
+agent_access: "{{AGENT_ACCESS}}"
+---
+```
+(Reference docs often need editing)
+
+**MEETING_NOTES.md:**
+```markdown
+---
+title: "{{TITLE}}"
+date: "{{DATE}}"
+agent_access: "full"
+---
+```
+(Meeting notes often need updating)
+
+### Documentation Updates
+
+Update README to explain:
+- How `agent_access` works in templates
+- Natural language patterns for inferring access level
+- Best practices for different note types
+
+---
+
+This makes the whole permission system feel natural and integrated into the creation workflow. Ready to cook! 🔥
