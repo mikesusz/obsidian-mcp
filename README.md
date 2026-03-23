@@ -1,6 +1,6 @@
 # obsidian-mcp
 
-A stdio MCP server that gives LLMs read and (limited) write access to an Obsidian vault. Full read access to all notes; append-only write access to a configurable list of notes; and structured note creation from templates.
+A stdio MCP server that gives LLMs controlled access to an Obsidian vault. Per-note permissions are set via `agent_access` frontmatter (`hidden`, `read`, `append`, `edit`). Append-only write access to a configurable inbox/scratch whitelist. Structured note creation from templates.
 
 _Note:_ if you want a simple, read-only local Obsidian MCP Server, you can use the [1.0 Release of this project](https://github.com/mikesusz/obsidian-mcp/releases/tag/1.0), which includes no file-write capabilities whatsoever.
 
@@ -18,9 +18,9 @@ pip install -e .
 cp .env.example .env
 # Edit .env and set VAULT_PATH=/path/to/your/vault
 
-# 3. (Optional) Configure writable notes
+# 3. (Optional) Configure append whitelist for inbox/scratch notes
 cp .obsidian-mcp.config.example.json /path/to/your/vault/.obsidian-mcp.config.json
-# Edit to match your vault
+# Edit to match your vault — per-note permissions use agent_access frontmatter instead
 
 # 4. Add to your MCP client (see MCP Client Configuration below)
 ```
@@ -56,15 +56,30 @@ Edit `.env`:
 VAULT_PATH=/path/to/your/obsidian/vault
 ```
 
-### Writable notes
+### Per-note access control
 
-By default, only `__INBOX.md` and `__scratch.md` can be written to. To customize this, copy the example config into your vault root:
+Add an `agent_access` field to any note's frontmatter to control what the agent can do with it:
+
+```yaml
+---
+agent_access: "hidden"   # invisible to the agent — won't appear in search or list
+agent_access: "read"     # agent can read but not modify
+agent_access: "append"   # agent can only add content (safe default)
+agent_access: "edit"     # agent can freely edit
+---
+```
+
+No config file needed — just add the field to the note. Notes without `agent_access` default to `append`.
+
+### Append whitelist (inbox/scratch notes)
+
+The `append_to_note` tool uses a separate whitelist for quick-capture notes like an inbox or scratch pad. By default, only `__INBOX.md` and `__scratch.md` are in this list. To customize it, copy the example config into your vault root:
 
 ```bash
 cp .obsidian-mcp.config.example.json /path/to/your/vault/.obsidian-mcp.config.json
 ```
 
-Edit it to list whichever notes you want to be writable:
+Edit it to list whichever notes you want available for appending:
 
 ```json
 {
@@ -76,7 +91,7 @@ Edit it to list whichever notes you want to be writable:
 }
 ```
 
-All writable notes must be in the vault root (no subfolders). The config is read on every request, so changes take effect immediately without restarting the server.
+All whitelist notes must be in the vault root (no subfolders). The config is read on every request, so changes take effect immediately without restarting the server.
 
 ## MCP Client Configuration
 
@@ -491,11 +506,11 @@ This lets you answer natural-language questions ("who are the authors?") and sti
 
 ---
 
-## Writable Notes
+## Access Control
 
-Write access is limited to notes explicitly listed in `.obsidian-mcp.config.json` in your vault root (see [Configuration](#writable-notes)). If no config file is present, only `__INBOX.md` and `__scratch.md` are writable by default.
+**Per-note permissions** are set via `agent_access` in a note's frontmatter — no config file needed. Notes marked `hidden` are completely invisible to the agent; `read` notes can be viewed but not modified; `append` (default) allows adding content only; `edit` allows full modification.
 
-All writable notes must be in the vault root (no subfolders). Path traversal protection is structural: only filenames explicitly listed in the config can be written to, so `../etc/passwd`-style paths are blocked by design.
+**Append whitelist** (`append_to_note`) uses `.obsidian-mcp.config.json` in your vault root. If no config file is present, only `__INBOX.md` and `__scratch.md` are available. All whitelist notes must be in the vault root. Path traversal protection is structural: only filenames explicitly listed in the config can be written to, so `../etc/passwd`-style paths are blocked by design.
 
 ---
 
