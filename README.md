@@ -469,13 +469,13 @@ The server communicates over stdio and is normally launched automatically by you
 
 ## Migrating from obsidian-mcp v2
 
-See [MIGRATION.md](https://github.com/mikesusz/markdown-vault-mcp/MIGRATION.md) for upgrade steps.
+See [MIGRATION.md](https://github.com/mikesusz/markdown-vault-mcp/blob/main/MIGRATION.md) for upgrade steps.
 
 ---
 
 ## License
 
-GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) for the full text.
+GNU Affero General Public License v3.0 — see [LICENSE](https://github.com/mikesusz/markdown-vault-mcp/blob/main/LICENSE) for the full text.
 
 You are free to use, modify, and distribute this software under the AGPL v3 terms. If you run a modified version as a network service, you must make the modified source available to users of that service.
 
