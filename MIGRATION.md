@@ -18,15 +18,15 @@
 
 ```json
 {
-  "mcpServers": {
-    "markdown-vault": {
-      "command": "/path/to/obsidian-mcp/.venv/bin/python",
-      "args": ["-m", "markdown_vault_mcp.server"],
-      "env": {
-        "VAULT_PATH": "/path/to/your/markdown/files"
-      }
-    }
-  }
+	"mcpServers": {
+		"markdown-vault": {
+			"command": "/path/to/markdown-vault-mcp/.venv/bin/python",
+			"args": ["-m", "markdown_vault_mcp.server"],
+			"env": {
+				"VAULT_PATH": "/path/to/your/markdown/files"
+			}
+		}
+	}
 }
 ```
 
@@ -49,13 +49,13 @@
 ---
 agent_access: append
 ---
-
 # My Inbox
 
 Content here…
 ```
 
 **No action needed if:**
+
 - Your notes already have `agent_access` frontmatter (they'll keep working as-is)
 - You're fine with the default `append` access for notes without frontmatter
 
@@ -81,20 +81,18 @@ The vault-level config file for the writable notes whitelist is no longer read. 
 The response shape changed slightly:
 
 **Old:**
+
 ```json
 {
-  "writable_notes": [
-    { "path": "__INBOX.md", "exists": true, "purpose": "Quick capture inbox" }
-  ]
+	"writable_notes": [{ "path": "__INBOX.md", "exists": true, "purpose": "Quick capture inbox" }]
 }
 ```
 
 **New:**
+
 ```json
 {
-  "writable_notes": [
-    { "path": "__INBOX.md", "access_level": "append" }
-  ]
+	"writable_notes": [{ "path": "__INBOX.md", "access_level": "append" }]
 }
 ```
 

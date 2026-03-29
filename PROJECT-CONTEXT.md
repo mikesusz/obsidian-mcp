@@ -1,13 +1,13 @@
-# obsidian-mcp — Project Context
+# markdown-vault-mcp — Project Context
 
-A Python-based MCP (Model Context Protocol) server that gives LLMs read and limited write access to an Obsidian vault over stdio. Designed for use with Claude Desktop and other MCP-compatible clients.
+A Python-based MCP (Model Context Protocol) server that gives LLMs read and limited write access to any folder of markdown files over stdio. Designed for use with Claude Desktop and other MCP-compatible clients.
 
 ## What It Does
 
-- **Full read access** to all markdown notes in a vault (search, retrieve, list)
-- **Append-only write access** to a configurable whitelist of notes
+- **Full read access** to all markdown notes (search, retrieve, list)
+- **Frontmatter-controlled write access** — notes opt in to LLM writes via `llm_access` frontmatter field
 - **Template-based note creation** with field substitution and date/time placeholders
-- All configured via environment variable (`VAULT_PATH`) and an optional JSON config file in the vault root
+- All configured via environment variable (`VAULT_PATH`)
 
 ## Tech Stack
 
@@ -20,8 +20,8 @@ A Python-based MCP (Model Context Protocol) server that gives LLMs read and limi
 ## Architecture
 
 ```
-src/obsidian_mcp/
-  server.py     — MCP server entry point; registers and routes all 7 tools
+src/markdown_vault_mcp/
+  server.py     — MCP server entry point; registers and routes all tools
   vault.py      — All vault I/O: reading, searching, writing, template expansion
 
 templates/
@@ -30,7 +30,7 @@ templates/
 test_server.py  — End-to-end test harness; spawns server as subprocess over stdio
 ```
 
-## The 7 MCP Tools
+## The MCP Tools
 
 ### Read
 | Tool | Description |
@@ -42,14 +42,28 @@ test_server.py  — End-to-end test harness; spawns server as subprocess over st
 ### Write
 | Tool | Description |
 |------|-------------|
-| `list_writable_notes` | Show which notes are whitelisted for writing (from config or defaults) |
-| `append_to_note` | Append content to a whitelisted note; optionally prefixes with a timestamp heading; creates file if missing |
+| `list_writable_notes` | Show which notes allow LLM writes (via frontmatter) |
+| `append_to_note` | Append content to a writable note; optionally prefixes with a timestamp heading; creates file if missing |
 
 ### Templates
 | Tool | Description |
 |------|-------------|
 | `list_templates` | Discover all `.md` files under vault's `templates/` dir; extracts description from first-line comment |
 | `create_note_from_template` | Create a new note from a template; substitutes frontmatter fields, `# KEY:` body patterns, and `{{PLACEHOLDER}}` tokens |
+
+## Frontmatter-Based Permissions
+
+Write access is controlled by an `llm_access` field in each note's frontmatter:
+
+```yaml
+---
+llm_access: append   # or: read, none, full (future)
+---
+```
+
+- `append` — LLM can append to this note
+- `read` (or absent) — read-only
+- `none` — explicitly blocked from LLM access
 
 ## Template Placeholders
 
@@ -62,22 +76,13 @@ test_server.py  — End-to-end test harness; spawns server as subprocess over st
 VAULT_PATH=/path/to/your/vault
 ```
 
-**`.obsidian-mcp.config.json`** (vault root, gitignored) — controls writable notes whitelist:
-```json
-{
-  "writable_notes": [
-    { "path": "__INBOX.md",  "purpose": "Quick capture inbox" },
-    { "path": "__scratch.md", "purpose": "Scratch pad" }
-  ]
-}
-```
-Defaults to `__INBOX.md` and `__scratch.md` if no config file is present.
+No external config file needed — permissions live in note frontmatter.
 
 ## Safety Model
 
-- **Reads:** All `.md` files accessible; `.obsidian/` directory skipped; path traversal rejected
-- **Writes:** Whitelist-only; append-only (never overwrites); vault-root-only (no subfolders); path traversal structurally impossible (whitelist lookup)
-- **Template creation:** Safe filename validation (regex + 200 char max); duplicate protection; vault-root output only
+- **Reads:** All `.md` files accessible; path traversal rejected
+- **Writes:** Frontmatter opt-in only; append-only (never overwrites); path traversal structurally impossible
+- **Template creation:** Safe filename validation (regex + 200 char max); duplicate protection
 - All write/create operations logged to stderr (doesn't interfere with stdio transport)
 
 ## How It Evolved
@@ -89,6 +94,7 @@ Defaults to `__INBOX.md` and `__scratch.md` if no config file is present.
 | 2.5 | Template creation: `list_templates`, `create_note_from_template`, field substitution |
 | 2.6 | Smart placeholders: `{{TODAY}}`, `{{NOW}}`, etc. |
 | 3 | Config file abstraction, example templates, README, general-purpose release |
+| 4 | Rebrand from `obsidian-mcp` → `markdown-vault-mcp`; frontmatter-based permissions replacing config whitelist |
 
 ## Running
 
@@ -106,9 +112,9 @@ python test_server.py --vault /path/to/your/vault
 ```json
 {
   "mcpServers": {
-    "obsidian": {
-      "command": "/path/to/obsidian-mcp/.venv/bin/python",
-      "args": ["-m", "obsidian_mcp.server"],
+    "markdown-vault": {
+      "command": "/path/to/markdown-vault-mcp/.venv/bin/python",
+      "args": ["-m", "markdown_vault_mcp.server"],
       "env": { "VAULT_PATH": "/path/to/your/vault" }
     }
   }

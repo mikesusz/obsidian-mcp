@@ -4,14 +4,14 @@ Agent-controlled markdown files with frontmatter-based permissions.
 
 Works with Obsidian vaults, static site generators (Hugo, Jekyll, Astro), note-taking apps (Bear, Typora, iA Writer), or any folder of `.md` files.
 
-_Note:_ if you want a simple, read-only version with no file-write capabilities, see the [1.0 Release](https://github.com/mikesusz/obsidian-mcp/releases/tag/1.0).
+_Note:_ if you want a simple, read-only version with no file-write capabilities, see the [1.0 Release](https://github.com/mikesusz/markdown-vault-mcp/releases/tag/1.0).
 
 ## Quick Start
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/mikesusz/obsidian-mcp
-cd obsidian-mcp
+git clone https://github.com/mikesusz/markdown-vault-mcp
+cd markdown-vault-mcp
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
@@ -40,8 +40,8 @@ The server doesn't care about your note-taking app — it just needs markdown fi
 ## Installation
 
 ```bash
-git clone https://github.com/mikesusz/obsidian-mcp
-cd obsidian-mcp
+git clone https://github.com/mikesusz/markdown-vault-mcp
+cd markdown-vault-mcp
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
@@ -84,7 +84,7 @@ Notes without `agent_access` default to `append`. No configuration files. No har
 {
 	"mcpServers": {
 		"markdown-vault": {
-			"command": "/path/to/obsidian-mcp/.venv/bin/python",
+			"command": "/path/to/markdown-vault-mcp/.venv/bin/python",
 			"args": ["-m", "markdown_vault_mcp.server"],
 			"env": {
 				"VAULT_PATH": "/path/to/your/markdown/files"
@@ -169,7 +169,12 @@ List all markdown notes in the vault (or a subfolder).
 ```json
 [
 	{ "title": "Home", "path": "Home.md", "size": 512, "modified": "2024-06-01T09:00:00" },
-	{ "title": "Daily Note", "path": "Daily/2024-01-15.md", "size": 256, "modified": "2024-01-15T08:00:00" }
+	{
+		"title": "Daily Note",
+		"path": "Daily/2024-01-15.md",
+		"size": 256,
+		"modified": "2024-01-15T08:00:00"
+	}
 ]
 ```
 
@@ -234,8 +239,18 @@ List all `.md` files in your vault's `templates/` directory.
 ```json
 {
 	"templates": [
-		{ "name": "PROJECT", "path": "templates/PROJECT.md", "size": 100, "description": "General project template" },
-		{ "name": "JOURNAL", "path": "templates/JOURNAL.md", "size": 96, "description": "Daily journal entry" }
+		{
+			"name": "PROJECT",
+			"path": "templates/PROJECT.md",
+			"size": 100,
+			"description": "General project template"
+		},
+		{
+			"name": "JOURNAL",
+			"path": "templates/JOURNAL.md",
+			"size": 96,
+			"description": "Daily journal entry"
+		}
 	]
 }
 ```
@@ -291,6 +306,7 @@ Find and replace a specific piece of text in a note body. Exact match, case-sens
 - `new_text` (string, required) — replacement text
 
 **Errors:**
+
 - `"Text not found in note: '...'"` — if `old_text` doesn't appear in the body
 
 ---
@@ -306,19 +322,20 @@ Replace the content beneath a specific heading, preserving the heading line itse
 - `new_content` (string, required) — replacement content for that section
 
 **Errors:**
+
 - `"Heading '...' not found in note"` — if the heading doesn't exist
 
 ---
 
 ### Permission requirements
 
-| Tool | Required `agent_access` |
-| ---- | ----------------------- |
-| `get_note`, `search_notes`, `list_notes` | `"read"` or higher (invisible if `"hidden"`) |
-| `append_to_note` | `"append"` or higher (default if no frontmatter) |
-| `update_note` | `"edit"` |
-| `replace_in_note` | `"edit"` |
-| `update_section` | `"edit"` |
+| Tool                                     | Required `agent_access`                          |
+| ---------------------------------------- | ------------------------------------------------ |
+| `get_note`, `search_notes`, `list_notes` | `"read"` or higher (invisible if `"hidden"`)     |
+| `append_to_note`                         | `"append"` or higher (default if no frontmatter) |
+| `update_note`                            | `"edit"`                                         |
+| `replace_in_note`                        | `"edit"`                                         |
+| `update_section`                         | `"edit"`                                         |
 
 If a note lacks the required `agent_access` value, edit tools return:
 
@@ -374,38 +391,40 @@ The `templates/examples/` directory in this repo contains ready-to-use templates
 
 Templates can include an `agent_access` frontmatter field to declare how freely an agent should edit the note after creation:
 
-| Value | Meaning |
-| ------- | ------- |
-| `"edit"` | Agent can freely edit the note |
+| Value      | Meaning                                                              |
+| ---------- | -------------------------------------------------------------------- |
+| `"edit"`   | Agent can freely edit the note                                       |
 | `"append"` | Agent should only add content, not edit existing text (safe default) |
-| `"read"` | Agent can view but not modify the note |
-| `"hidden"` | Agent cannot see, search, or access this note at all |
+| `"read"`   | Agent can view but not modify the note                               |
+| `"hidden"` | Agent cannot see, search, or access this note at all                 |
 
 **Hardcoded in template** (e.g. JOURNAL.md always appends):
+
 ```markdown
 ---
-date: "{{TODAY}}"
-agent_access: "append"
+date: '{{TODAY}}'
+agent_access: 'append'
 ---
 ```
 
 **Dynamic via placeholder** (e.g. REFERENCE_DOC.md — set at creation time):
+
 ```markdown
 ---
-title: "{{TITLE}}"
-agent_access: "{{AGENT_ACCESS}}"
+title: '{{TITLE}}'
+agent_access: '{{AGENT_ACCESS}}'
 ---
 ```
 
 When using the dynamic placeholder, pass `agent_access` to `create_note_from_template` and the value is inferred from the user's phrasing:
 
-| User says… | Inferred value |
-| --- | --- |
-| "you can edit/update/modify" or "fully editable" | `"edit"` |
-| "you can add to" or "append-only" | `"append"` |
-| No specific instruction | `"append"` (safe default) |
-| "read-only", "I'll edit this myself", "just create it" | `"read"` |
-| "this is private", "keep this hidden", "don't show this" | `"hidden"` |
+| User says…                                               | Inferred value            |
+| -------------------------------------------------------- | ------------------------- |
+| "you can edit/update/modify" or "fully editable"         | `"edit"`                  |
+| "you can add to" or "append-only"                        | `"append"`                |
+| No specific instruction                                  | `"append"` (safe default) |
+| "read-only", "I'll edit this myself", "just create it"   | `"read"`                  |
+| "this is private", "keep this hidden", "don't show this" | `"hidden"`                |
 
 If `agent_access` is passed explicitly to `create_note_from_template`, it overrides whatever value the template has (hardcoded or placeholder).
 
@@ -413,16 +432,16 @@ If `agent_access` is passed explicitly to `create_note_from_template`, it overri
 
 The following `{{PLACEHOLDER}}` tokens are automatically replaced when a note is created:
 
-| Placeholder     | Example output                 |
-| --------------- | ------------------------------ |
-| `{{TODAY}}`     | `2026-03-24`                   |
-| `{{DATE}}`      | `2026-03-24` (alias for TODAY) |
-| `{{NOW}}`       | `2026-03-24 15:30:45`          |
-| `{{TIME}}`      | `15:30:45`                     |
-| `{{TIMESTAMP}}` | `1742820645` (Unix timestamp)  |
-| `{{YEAR}}`      | `2026`                         |
-| `{{MONTH}}`     | `03`                           |
-| `{{DAY}}`       | `24`                           |
+| Placeholder        | Example output                                                              |
+| ------------------ | --------------------------------------------------------------------------- |
+| `{{TODAY}}`        | `2026-03-24`                                                                |
+| `{{DATE}}`         | `2026-03-24` (alias for TODAY)                                              |
+| `{{NOW}}`          | `2026-03-24 15:30:45`                                                       |
+| `{{TIME}}`         | `15:30:45`                                                                  |
+| `{{TIMESTAMP}}`    | `1742820645` (Unix timestamp)                                               |
+| `{{YEAR}}`         | `2026`                                                                      |
+| `{{MONTH}}`        | `03`                                                                        |
+| `{{DAY}}`          | `24`                                                                        |
 | `{{AGENT_ACCESS}}` | `"append"` (resolved from the `agent_access` parameter, default `"append"`) |
 
 Placeholders are expanded after `field_values` are applied, so caller-supplied values always take precedence.
@@ -441,12 +460,12 @@ If a `field_values` value for an array-typed frontmatter field contains `and`, i
 
 Permissions are set via `agent_access` in each note's frontmatter — no config files, no hardcoded lists.
 
-| Value | Agent can… |
-| --- | --- |
-| `hidden` | Nothing — file is completely invisible |
-| `read` | View but not modify |
+| Value    | Agent can…                                               |
+| -------- | -------------------------------------------------------- |
+| `hidden` | Nothing — file is completely invisible                   |
+| `read`   | View but not modify                                      |
 | `append` | Add content only (default for notes without frontmatter) |
-| `edit` | Freely edit |
+| `edit`   | Freely edit                                              |
 
 ---
 
@@ -497,4 +516,4 @@ You are free to use, modify, and distribute this software under the AGPL v3 term
 
 ## Feedback
 
-This project is a work in progress, and may have bugs. You can submit [a Github Issue](https://github.com/mikesusz/obsidian-mcp/issues) if you encounter any problems, and I will probably fix it! Because I don't want to have that problem, either.
+This project is a work in progress, and may have bugs. You can submit [a Github Issue](https://github.com/mikesusz/markdown-vault-mcp/issues) if you encounter any problems, and I will probably fix it! Because I don't want to have that problem, either.

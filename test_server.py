@@ -1,5 +1,5 @@
 """
-Quick test harness for the obsidian-mcp server.
+Quick test harness for the markdown-vault-mcp server.
 
 Spawns the server as a subprocess over stdio and exercises each tool,
 printing results so you can verify the MCP communication layer end-to-end.
@@ -66,12 +66,12 @@ def pretty(data: str) -> None:
 async def run_tests(vault_path: str, note_path: str | None, query: str) -> None:
     server_params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "obsidian_mcp.server"],
+        args=["-m", "markdown_vault_mcp.server"],
         env={**os.environ, "VAULT_PATH": vault_path},
     )
 
     print(f"{BOLD}Vault:{RESET} {vault_path}")
-    print(f"{BOLD}Server:{RESET} {sys.executable} -m obsidian_mcp.server")
+    print(f"{BOLD}Server:{RESET} {sys.executable} -m markdown_vault_mcp.server")
 
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -372,7 +372,7 @@ async def run_tests(vault_path: str, note_path: str | None, query: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Test harness for obsidian-mcp")
+    parser = argparse.ArgumentParser(description="Test harness for markdown-vault-mcp")
     parser.add_argument("--vault", help="Path to Obsidian vault (overrides VAULT_PATH env)")
     parser.add_argument("--note", help="Relative path to a note to test get_note with")
     parser.add_argument("--query", default="the", help="Search term for search_notes (default: 'the')")
