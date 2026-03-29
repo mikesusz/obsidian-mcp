@@ -20,65 +20,10 @@ pip install -e .
 cp .env.example .env
 # Edit .env and set VAULT_PATH=/path/to/your/markdown/files
 
-# 3. Add to your MCP client (see MCP Client Configuration below)
+# 3. Add to your MCP client configuration
 ```
 
-## Requirements
-
-- Python 3.10+
-- A folder containing `.md` files
-
-## Works With
-
-- **Obsidian** — point `VAULT_PATH` at your vault folder
-- **Hugo / Jekyll / Astro** — point at your `content/` folder
-- **Bear / Typora / iA Writer** — point at your notes folder
-- **Plain markdown** — point at any folder of `.md` files
-
-The server doesn't care about your note-taking app — it just needs markdown files with optional YAML frontmatter.
-
-## Installation
-
-```bash
-git clone https://github.com/mikesusz/markdown-vault-mcp
-cd markdown-vault-mcp
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e .
-```
-
-## Configuration
-
-### Markdown folder path
-
-Copy the example env file and set your folder path:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```env
-VAULT_PATH=/path/to/your/markdown/files
-```
-
-### Permission System
-
-Control agent access by adding `agent_access` to any note's frontmatter:
-
-```yaml
----
-agent_access: "hidden"   # invisible to the agent — won't appear in search or list
-agent_access: "read"     # agent can read but not modify
-agent_access: "append"   # agent can only add content (safe default)
-agent_access: "edit"     # agent can freely edit
----
-```
-
-Notes without `agent_access` default to `append`. No configuration files. No hardcoded lists. Just frontmatter.
-
-## MCP Client Configuration
+**MCP Client Config** (Claude Desktop, etc.):
 
 ```json
 {
@@ -94,17 +39,63 @@ Notes without `agent_access` default to `append`. No configuration files. No har
 }
 ```
 
-Use the full path to the Python binary inside your virtualenv so the correct dependencies are picked up. The `VAULT_PATH` env var can be set here instead of (or in addition to) the `.env` file — values passed by the client take precedence.
+Use the full path to the Python binary inside your virtualenv. The `VAULT_PATH` can be set in `.env` or passed via the client config (client takes precedence).
 
-## Running the server manually
+## Requirements
 
-```bash
-python -m markdown_vault_mcp.server
-# or
-markdown-vault-mcp
+- Python 3.10+
+- A folder containing `.md` files
+
+## Works With
+
+- **Obsidian** — point `VAULT_PATH` at your vault folder
+- **Hugo / Jekyll / Astro** — point at your `content/` folder
+- **Bear / Typora / iA Writer** — point at your notes folder
+- **Plain markdown** — point at any folder of `.md` files
+
+The server doesn't care about your note-taking app — it just needs markdown files with optional YAML frontmatter.
+
+---
+
+## Permission System
+
+Control agent access by adding `agent_access` to any note's frontmatter:
+
+```yaml
+---
+agent_access: edit    # Agent can freely edit
+agent_access: append  # Agent can only add content (safe default)
+agent_access: read    # Agent can view but not modify
+agent_access: hidden  # Completely invisible to agents
+---
 ```
 
-The server communicates over stdio and is normally launched automatically by your MCP client.
+**Notes without frontmatter default to `append`.** No configuration files. No hardcoded lists. Just frontmatter.
+
+### Permission Hierarchy
+
+| Value    | Agent can…                                               |
+| -------- | -------------------------------------------------------- |
+| `hidden` | Nothing — file is completely invisible                   |
+| `read`   | View but not modify                                      |
+| `append` | Add content only (default for notes without frontmatter) |
+| `edit`   | Freely edit                                              |
+
+### Tool Permission Requirements
+
+| Tool                                     | Required `agent_access`                        |
+| ---------------------------------------- | ---------------------------------------------- |
+| `get_note`, `search_notes`, `list_notes` | `read` or higher (invisible if `hidden`)       |
+| `append_to_note`                         | `append` or higher (default if no frontmatter) |
+| `update_note`                            | `edit`                                         |
+| `replace_in_note`                        | `edit`                                         |
+| `update_section`                         | `edit`                                         |
+
+If a note lacks the required permission, edit tools return:
+
+```
+Error: Insufficient permissions. This note has agent_access: 'append', but this operation requires: 'edit'. Add agent_access: 'edit' to the note's frontmatter to enable this operation.
+```
 
 ---
 
@@ -255,20 +246,18 @@ List all `.md` files in your vault's `templates/` directory.
 }
 ```
 
-Descriptions are extracted from the first line of each template if it's a comment (`%% ... %%` or `<!-- ... -->`), otherwise shown as "Template".
-
 ---
 
 ### `create_note_from_template`
 
-Create a new note at the vault root from a named template. The file is named `{template_name} {note_suffix}.md`. If no suffix is given, a timestamp is used instead.
+Create a new note from an existing template. Automatically replaces placeholders like `{{TODAY}}` and `{{AGENT_ACCESS}}`, and pre-fills frontmatter or heading-based fields.
 
 **Input:**
 
-- `template_name` (string, required) — name of the template, e.g. `"PROJECT"` or `"New Book"`
+- `template_name` (string, required) — name of the template (e.g. `"PROJECT"`, `"New Book"`). Must match a file in `templates/`.
 - `note_suffix` (string, optional) — appended to the filename, e.g. `"deck replacement"` → `"PROJECT deck replacement.md"`. Letters, numbers, spaces, hyphens, underscores only.
 - `field_values` (object, optional) — pre-fill template fields. Keys match YAML frontmatter field names (e.g. `{"title": "My Book", "authors": "Jane Smith"}`). Keys not found in frontmatter will be matched against `# KEY:` headings in the body instead.
-- `agent_access` (string, optional) — permission level for agent access after creation: `"edit"`, `"append"` (default), `"read"`, or `"hidden"`. Overrides any value already in the template's `agent_access` frontmatter field. Infer from the user's phrasing (see [Agent access in templates](#agent-access-in-templates)).
+- `agent_access` (string, optional) — permission level for agent access after creation: `"edit"`, `"append"` (default), `"read"`, or `"hidden"`. Overrides any value already in the template's `agent_access` frontmatter field. Infer from the user's phrasing (see Templates section below).
 
 **Example result:**
 
@@ -327,24 +316,6 @@ Replace the content beneath a specific heading, preserving the heading line itse
 
 ---
 
-### Permission requirements
-
-| Tool                                     | Required `agent_access`                          |
-| ---------------------------------------- | ------------------------------------------------ |
-| `get_note`, `search_notes`, `list_notes` | `"read"` or higher (invisible if `"hidden"`)     |
-| `append_to_note`                         | `"append"` or higher (default if no frontmatter) |
-| `update_note`                            | `"edit"`                                         |
-| `replace_in_note`                        | `"edit"`                                         |
-| `update_section`                         | `"edit"`                                         |
-
-If a note lacks the required `agent_access` value, edit tools return:
-
-```
-Error: Insufficient permissions. This note has agent_access: 'append', but this operation requires: 'edit'. Add agent_access: 'edit' to the note's frontmatter to enable this operation.
-```
-
----
-
 ## Templates
 
 ### Adding templates
@@ -389,14 +360,7 @@ The `templates/examples/` directory in this repo contains ready-to-use templates
 
 ### Agent access in templates
 
-Templates can include an `agent_access` frontmatter field to declare how freely an agent should edit the note after creation:
-
-| Value      | Meaning                                                              |
-| ---------- | -------------------------------------------------------------------- |
-| `"edit"`   | Agent can freely edit the note                                       |
-| `"append"` | Agent should only add content, not edit existing text (safe default) |
-| `"read"`   | Agent can view but not modify the note                               |
-| `"hidden"` | Agent cannot see, search, or access this note at all                 |
+Templates can include an `agent_access` frontmatter field to declare how freely an agent should edit the note after creation.
 
 **Hardcoded in template** (e.g. JOURNAL.md always appends):
 
@@ -418,13 +382,13 @@ agent_access: '{{AGENT_ACCESS}}'
 
 When using the dynamic placeholder, pass `agent_access` to `create_note_from_template` and the value is inferred from the user's phrasing:
 
-| User says…                                               | Inferred value            |
-| -------------------------------------------------------- | ------------------------- |
-| "you can edit/update/modify" or "fully editable"         | `"edit"`                  |
-| "you can add to" or "append-only"                        | `"append"`                |
-| No specific instruction                                  | `"append"` (safe default) |
-| "read-only", "I'll edit this myself", "just create it"   | `"read"`                  |
-| "this is private", "keep this hidden", "don't show this" | `"hidden"`                |
+| User says…                                               | Inferred value |
+| -------------------------------------------------------- | -------------- |
+| "you can edit/update/modify" or "fully editable"         | `edit`         |
+| "you can add to" or "append-only"                        | `append`       |
+| No specific instruction                                  | `append`       |
+| "read-only", "I'll edit this myself", "just create it"   | `read`         |
+| "this is private", "keep this hidden", "don't show this" | `hidden`       |
 
 If `agent_access` is passed explicitly to `create_note_from_template`, it overrides whatever value the template has (hardcoded or placeholder).
 
@@ -453,19 +417,6 @@ If a `field_values` value for an array-typed frontmatter field contains `and`, i
 ```
 "William Gibson and Bruce Sterling" → ["William Gibson", "Bruce Sterling"]
 ```
-
----
-
-## Access Control
-
-Permissions are set via `agent_access` in each note's frontmatter — no config files, no hardcoded lists.
-
-| Value    | Agent can…                                               |
-| -------- | -------------------------------------------------------- |
-| `hidden` | Nothing — file is completely invisible                   |
-| `read`   | View but not modify                                      |
-| `append` | Add content only (default for notes without frontmatter) |
-| `edit`   | Freely edit                                              |
 
 ---
 
@@ -502,9 +453,25 @@ Your MCP client keeps the server process alive. Restart the client (e.g. quit an
 **`field_values` not updating frontmatter**
 Check that the key names exactly match the YAML frontmatter keys in the template (case-sensitive). Use `fields_applied` in the response to confirm what was actually written.
 
+---
+
+## Running the server manually
+
+```bash
+python -m markdown_vault_mcp.server
+# or
+markdown-vault-mcp
+```
+
+The server communicates over stdio and is normally launched automatically by your MCP client.
+
+---
+
 ## Migrating from obsidian-mcp v2
 
-See [MIGRATION.md](MIGRATION.md) for upgrade steps.
+See [MIGRATION.md](https://github.com/mikesusz/markdown-vault-mcp/MIGRATION.md) for upgrade steps.
+
+---
 
 ## License
 
