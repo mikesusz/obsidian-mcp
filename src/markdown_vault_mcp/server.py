@@ -1,4 +1,4 @@
-"""Obsidian MCP server - vault access via stdio transport."""
+"""markdown-vault-mcp server - markdown folder access via stdio transport."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from .vault import (
 
 load_dotenv()
 
-app = Server("obsidian-mcp")
+app = Server("markdown-vault")
 
 
 def _vault_path() -> str:
@@ -33,7 +33,7 @@ def _vault_path() -> str:
     if not path:
         raise RuntimeError(
             "VAULT_PATH environment variable is not set. "
-            "Copy .env.example to .env and set your vault path."
+            "Copy .env.example to .env and set your markdown folder path."
         )
     return path
 
@@ -43,7 +43,7 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="search_notes",
-            description="Search notes by content or title (case-insensitive). Returns up to 10 matches with a short excerpt around each match.",
+            description="Search markdown notes by content or title (case-insensitive). Returns up to 10 matches with a short excerpt around each match.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -85,14 +85,19 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="list_writable_notes",
-            description="Show which notes support write (append) operations and whether they currently exist.",
+            description=(
+                "Show all notes that agents can append to — those with agent_access: 'append' or 'edit' "
+                "in their frontmatter, plus notes with no frontmatter (default access is 'append'). "
+                "Use this before append_to_note to confirm a note is writable."
+            ),
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         types.Tool(
             name="append_to_note",
             description=(
-                "Append content to the end of a whitelisted note. "
-                "Only notes returned by list_writable_notes can be written to. "
+                "Append content to the end of a note. "
+                "Works on any note with agent_access: 'append' or 'edit' in its frontmatter, "
+                "or any note without frontmatter (default access). "
                 "Use list_writable_notes first if unsure which notes are available."
             ),
             inputSchema={
@@ -100,7 +105,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 "properties": {
                     "note_path": {
                         "type": "string",
-                        "description": "Filename of the writable note (e.g. 'books.md'). Must be in the whitelist.",
+                        "description": "Path to the note relative to vault root (e.g. 'inbox.md' or 'folder/notes.md'). Note must have agent_access: append or edit.",
                     },
                     "content": {
                         "type": "string",

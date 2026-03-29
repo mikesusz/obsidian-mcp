@@ -1,8 +1,10 @@
-# obsidian-mcp
+# markdown-vault-mcp
 
-A stdio MCP server that gives LLMs controlled access to an Obsidian vault. Per-note permissions are set via `agent_access` frontmatter (`hidden`, `read`, `append`, `edit`). Append-only write access to a configurable inbox/scratch whitelist. Structured note creation from templates.
+Agent-controlled markdown files with frontmatter-based permissions.
 
-_Note:_ if you want a simple, read-only local Obsidian MCP Server, you can use the [1.0 Release of this project](https://github.com/mikesusz/obsidian-mcp/releases/tag/1.0), which includes no file-write capabilities whatsoever.
+Works with Obsidian vaults, static site generators (Hugo, Jekyll, Astro), note-taking apps (Bear, Typora, iA Writer), or any folder of `.md` files.
+
+_Note:_ if you want a simple, read-only version with no file-write capabilities, see the [1.0 Release](https://github.com/mikesusz/obsidian-mcp/releases/tag/1.0).
 
 ## Quick Start
 
@@ -14,21 +16,26 @@ python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 
-# 2. Set your vault path
+# 2. Set your markdown folder path
 cp .env.example .env
-# Edit .env and set VAULT_PATH=/path/to/your/vault
+# Edit .env and set VAULT_PATH=/path/to/your/markdown/files
 
-# 3. (Optional) Configure append whitelist for inbox/scratch notes
-cp .obsidian-mcp.config.example.json /path/to/your/vault/.obsidian-mcp.config.json
-# Edit to match your vault — per-note permissions use agent_access frontmatter instead
-
-# 4. Add to your MCP client (see MCP Client Configuration below)
+# 3. Add to your MCP client (see MCP Client Configuration below)
 ```
 
 ## Requirements
 
 - Python 3.10+
-- An Obsidian vault on your local filesystem
+- A folder containing `.md` files
+
+## Works With
+
+- **Obsidian** — point `VAULT_PATH` at your vault folder
+- **Hugo / Jekyll / Astro** — point at your `content/` folder
+- **Bear / Typora / iA Writer** — point at your notes folder
+- **Plain markdown** — point at any folder of `.md` files
+
+The server doesn't care about your note-taking app — it just needs markdown files with optional YAML frontmatter.
 
 ## Installation
 
@@ -42,9 +49,9 @@ pip install -e .
 
 ## Configuration
 
-### Vault path
+### Markdown folder path
 
-Copy the example env file and set your vault path:
+Copy the example env file and set your folder path:
 
 ```bash
 cp .env.example .env
@@ -53,12 +60,12 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-VAULT_PATH=/path/to/your/obsidian/vault
+VAULT_PATH=/path/to/your/markdown/files
 ```
 
-### Per-note access control
+### Permission System
 
-Add an `agent_access` field to any note's frontmatter to control what the agent can do with it:
+Control agent access by adding `agent_access` to any note's frontmatter:
 
 ```yaml
 ---
@@ -69,42 +76,18 @@ agent_access: "edit"     # agent can freely edit
 ---
 ```
 
-No config file needed — just add the field to the note. Notes without `agent_access` default to `append`.
-
-### Append whitelist (inbox/scratch notes)
-
-The `append_to_note` tool uses a separate whitelist for quick-capture notes like an inbox or scratch pad. By default, only `__INBOX.md` and `__scratch.md` are in this list. To customize it, copy the example config into your vault root:
-
-```bash
-cp .obsidian-mcp.config.example.json /path/to/your/vault/.obsidian-mcp.config.json
-```
-
-Edit it to list whichever notes you want available for appending:
-
-```json
-{
-	"writable_notes": [
-		{ "path": "__INBOX.md", "description": "Quick capture inbox" },
-		{ "path": "__scratch.md", "description": "Temporary scratch pad" },
-		{ "path": "books.md", "description": "Reading list" }
-	]
-}
-```
-
-All whitelist notes must be in the vault root (no subfolders). The config is read on every request, so changes take effect immediately without restarting the server.
+Notes without `agent_access` default to `append`. No configuration files. No hardcoded lists. Just frontmatter.
 
 ## MCP Client Configuration
-
-Most MCP clients that support stdio servers accept a configuration block like this:
 
 ```json
 {
 	"mcpServers": {
-		"obsidian": {
+		"markdown-vault": {
 			"command": "/path/to/obsidian-mcp/.venv/bin/python",
-			"args": ["-m", "obsidian_mcp.server"],
+			"args": ["-m", "markdown_vault_mcp.server"],
 			"env": {
-				"VAULT_PATH": "/path/to/your/vault"
+				"VAULT_PATH": "/path/to/your/markdown/files"
 			}
 		}
 	}
@@ -113,14 +96,12 @@ Most MCP clients that support stdio servers accept a configuration block like th
 
 Use the full path to the Python binary inside your virtualenv so the correct dependencies are picked up. The `VAULT_PATH` env var can be set here instead of (or in addition to) the `.env` file — values passed by the client take precedence.
 
-Consult your MCP client's documentation for where to place this config.
-
 ## Running the server manually
 
 ```bash
-python -m obsidian_mcp.server
+python -m markdown_vault_mcp.server
 # or
-obsidian-mcp
+markdown-vault-mcp
 ```
 
 The server communicates over stdio and is normally launched automatically by your MCP client.
@@ -131,7 +112,7 @@ The server communicates over stdio and is normally launched automatically by you
 
 ### `search_notes`
 
-Search notes by title or content (case-insensitive). Returns up to 10 results with a short excerpt around each match.
+Search markdown notes by title or content (case-insensitive). Returns up to 10 results with a short excerpt around each match.
 
 **Input:**
 
@@ -144,7 +125,7 @@ Search notes by title or content (case-insensitive). Returns up to 10 results wi
 	{
 		"title": "Meeting Notes",
 		"path": "work/Meeting Notes.md",
-		"snippet": "…discussed the new obsidian plugin architecture…",
+		"snippet": "…discussed the new project architecture…",
 		"relevance_score": 7.0
 	}
 ]
@@ -188,12 +169,7 @@ List all markdown notes in the vault (or a subfolder).
 ```json
 [
 	{ "title": "Home", "path": "Home.md", "size": 512, "modified": "2024-06-01T09:00:00" },
-	{
-		"title": "Daily Note",
-		"path": "Daily/2024-01-15.md",
-		"size": 256,
-		"modified": "2024-01-15T08:00:00"
-	}
+	{ "title": "Daily Note", "path": "Daily/2024-01-15.md", "size": 256, "modified": "2024-01-15T08:00:00" }
 ]
 ```
 
@@ -201,7 +177,7 @@ List all markdown notes in the vault (or a subfolder).
 
 ### `list_writable_notes`
 
-Show which notes support write (append) operations, and whether each one currently exists.
+Show all notes that agents can append to — those with `agent_access: append` or `edit`, plus notes without any frontmatter (which default to `append`).
 
 **Input:** none
 
@@ -210,9 +186,8 @@ Show which notes support write (append) operations, and whether each one current
 ```json
 {
 	"writable_notes": [
-		{ "path": "__INBOX.md", "exists": true, "purpose": "Quick capture inbox" },
-		{ "path": "__scratch.md", "exists": true, "purpose": "Temporary scratch pad" },
-		{ "path": "books.md", "exists": false, "purpose": "Reading list" }
+		{ "path": "__INBOX.md", "access_level": "append" },
+		{ "path": "projects/status.md", "access_level": "edit" }
 	]
 }
 ```
@@ -221,11 +196,11 @@ Show which notes support write (append) operations, and whether each one current
 
 ### `append_to_note`
 
-Append content to the end of a writable note. Never overwrites existing content. Creates the file if it doesn't exist yet.
+Append content to the end of a note. Works on any note with `agent_access: append` or `edit`, or any note without frontmatter. Never overwrites existing content. Creates the file if it doesn't exist yet.
 
 **Input:**
 
-- `note_path` (string, required) — filename of a writable note, e.g. `"books.md"`
+- `note_path` (string, required) — path relative to vault root, e.g. `"inbox.md"` or `"folder/notes.md"`
 - `content` (string, required) — text to append
 - `add_timestamp` (boolean, optional, default: `true`) — if true, inserts a `## YYYY-MM-DD HH:MM` heading before the content
 
@@ -234,17 +209,17 @@ Append content to the end of a writable note. Never overwrites existing content.
 ```json
 {
 	"success": true,
-	"note_path": "books.md",
-	"appended_content": "\n- The Expanse\n",
-	"message": "Successfully appended to 'books.md'."
+	"note_path": "inbox.md",
+	"appended_content": "\n## 2026-03-24 10:30\nOrder furnace filters\n",
+	"message": "Successfully appended to 'inbox.md'."
 }
 ```
 
 **Example usage:**
 
-- `append_to_note("__INBOX.md", "Order furnace filters")` — timestamped capture to inbox
+- `append_to_note("inbox.md", "Order furnace filters")` — timestamped capture
 - `append_to_note("books.md", "- The Expanse", false)` — add a list item without a heading
-- `append_to_note("bands.md", "- Khruangbin", false)` — creates the file if it doesn't exist yet
+- `append_to_note("new-note.md", "Some content", false)` — creates the file if it doesn't exist
 
 ---
 
@@ -259,24 +234,8 @@ List all `.md` files in your vault's `templates/` directory.
 ```json
 {
 	"templates": [
-		{
-			"name": "PROJECT",
-			"path": "templates/PROJECT.md",
-			"size": 100,
-			"description": "General project template"
-		},
-		{
-			"name": "JOURNAL",
-			"path": "templates/JOURNAL.md",
-			"size": 96,
-			"description": "Daily journal entry"
-		},
-		{
-			"name": "New Book",
-			"path": "templates/New Book.md",
-			"size": 87,
-			"description": "Book tracking template"
-		}
+		{ "name": "PROJECT", "path": "templates/PROJECT.md", "size": 100, "description": "General project template" },
+		{ "name": "JOURNAL", "path": "templates/JOURNAL.md", "size": 96, "description": "Daily journal entry" }
 	]
 }
 ```
@@ -308,22 +267,6 @@ Create a new note at the vault root from a named template. The file is named `{t
 }
 ```
 
-**Example usage:**
-
-```
-create_note_from_template("PROJECT", "replacing the deck")
-→ Creates "PROJECT replacing the deck.md"
-
-create_note_from_template("New Book", "The Expanse", {"title": "The Expanse", "authors": "James S.A. Corey"})
-→ Creates "New Book The Expanse.md" with frontmatter populated
-
-create_note_from_template("MEETING_NOTES", "Q1 planning", {"attendees": "Alice and Bob and Carol"})
-→ Creates "MEETING_NOTES Q1 planning.md" with attendees: ["Alice", "Bob", "Carol"]
-
-create_note_from_template("REFERENCE_DOC", "mechanical keyboards", agent_access="edit")
-→ Creates "REFERENCE_DOC mechanical keyboards.md" with agent_access: "edit"
-```
-
 ---
 
 ### `update_note`
@@ -332,18 +275,8 @@ Replace the entire body of a note with new content. Frontmatter (including `agen
 
 **Input:**
 
-- `note_path` (string, required) — filename relative to vault root, e.g. `"My Note.md"`
+- `note_path` (string, required) — path relative to vault root, e.g. `"My Note.md"`
 - `new_content` (string, required) — full replacement body text
-
-**Example result:**
-
-```json
-{
-  "success": true,
-  "note_path": "REFERENCE_DOC mechanical keyboards.md",
-  "message": "Note body updated: 'REFERENCE_DOC mechanical keyboards.md'"
-}
-```
 
 ---
 
@@ -353,7 +286,7 @@ Find and replace a specific piece of text in a note body. Exact match, case-sens
 
 **Input:**
 
-- `note_path` (string, required) — filename relative to vault root
+- `note_path` (string, required) — path relative to vault root
 - `old_text` (string, required) — exact text to find
 - `new_text` (string, required) — replacement text
 
@@ -368,7 +301,7 @@ Replace the content beneath a specific heading, preserving the heading line itse
 
 **Input:**
 
-- `note_path` (string, required) — filename relative to vault root
+- `note_path` (string, required) — path relative to vault root
 - `heading` (string, required) — exact heading text, e.g. `"## Next Steps"` or `"SYNOPSIS:"`
 - `new_content` (string, required) — replacement content for that section
 
@@ -382,12 +315,12 @@ Replace the content beneath a specific heading, preserving the heading line itse
 | Tool | Required `agent_access` |
 | ---- | ----------------------- |
 | `get_note`, `search_notes`, `list_notes` | `"read"` or higher (invisible if `"hidden"`) |
-| `append_to_note` | whitelist-based (see [Writable Notes](#writable-notes)) |
+| `append_to_note` | `"append"` or higher (default if no frontmatter) |
 | `update_note` | `"edit"` |
 | `replace_in_note` | `"edit"` |
 | `update_section` | `"edit"` |
 
-If a note lacks the required `agent_access` value, all edit tools return:
+If a note lacks the required `agent_access` value, edit tools return:
 
 ```
 Error: Insufficient permissions. This note has agent_access: 'append', but this operation requires: 'edit'. Add agent_access: 'edit' to the note's frontmatter to enable this operation.
@@ -482,14 +415,14 @@ The following `{{PLACEHOLDER}}` tokens are automatically replaced when a note is
 
 | Placeholder     | Example output                 |
 | --------------- | ------------------------------ |
-| `{{TODAY}}`     | `2026-02-27`                   |
-| `{{DATE}}`      | `2026-02-27` (alias for TODAY) |
-| `{{NOW}}`       | `2026-02-27 15:30:45`          |
+| `{{TODAY}}`     | `2026-03-24`                   |
+| `{{DATE}}`      | `2026-03-24` (alias for TODAY) |
+| `{{NOW}}`       | `2026-03-24 15:30:45`          |
 | `{{TIME}}`      | `15:30:45`                     |
-| `{{TIMESTAMP}}` | `1740578445` (Unix timestamp)  |
+| `{{TIMESTAMP}}` | `1742820645` (Unix timestamp)  |
 | `{{YEAR}}`      | `2026`                         |
-| `{{MONTH}}`     | `02`                           |
-| `{{DAY}}`       | `27`                           |
+| `{{MONTH}}`     | `03`                           |
+| `{{DAY}}`       | `24`                           |
 | `{{AGENT_ACCESS}}` | `"append"` (resolved from the `agent_access` parameter, default `"append"`) |
 
 Placeholders are expanded after `field_values` are applied, so caller-supplied values always take precedence.
@@ -502,15 +435,18 @@ If a `field_values` value for an array-typed frontmatter field contains `and`, i
 "William Gibson and Bruce Sterling" → ["William Gibson", "Bruce Sterling"]
 ```
 
-This lets you answer natural-language questions ("who are the authors?") and still get correctly structured YAML.
-
 ---
 
 ## Access Control
 
-**Per-note permissions** are set via `agent_access` in a note's frontmatter — no config file needed. Notes marked `hidden` are completely invisible to the agent; `read` notes can be viewed but not modified; `append` (default) allows adding content only; `edit` allows full modification.
+Permissions are set via `agent_access` in each note's frontmatter — no config files, no hardcoded lists.
 
-**Append whitelist** (`append_to_note`) uses `.obsidian-mcp.config.json` in your vault root. If no config file is present, only `__INBOX.md` and `__scratch.md` are available. All whitelist notes must be in the vault root. Path traversal protection is structural: only filenames explicitly listed in the config can be written to, so `../etc/passwd`-style paths are blocked by design.
+| Value | Agent can… |
+| --- | --- |
+| `hidden` | Nothing — file is completely invisible |
+| `read` | View but not modify |
+| `append` | Add content only (default for notes without frontmatter) |
+| `edit` | Freely edit |
 
 ---
 
@@ -528,8 +464,6 @@ Options:
 - `--note` — specific note path to test `get_note` with
 - `--query` — search term for `search_notes` (default: `"the"`)
 
-The harness spawns the server as a subprocess, exercises all 7 tools, and reports pass/fail for each. It also tests error cases: path traversal attempts, non-whitelisted writes, duplicate note creation, and invalid template names.
-
 ---
 
 ## Troubleshooting
@@ -540,14 +474,18 @@ Copy `.env.example` to `.env` and set the path, or pass `VAULT_PATH` in your MCP
 **`Templates directory not found in vault`**
 Create a `templates/` folder in your vault root, or copy templates from `templates/examples/` in this repo.
 
-**`'foo.md' is not in the writable whitelist`**
-Add the note to `.obsidian-mcp.config.json` in your vault root (see [Writable notes](#writable-notes)).
+**`Insufficient permissions`**
+The note has `agent_access: read` or `hidden`. Add `agent_access: append` or `agent_access: edit` to its frontmatter.
 
 **Changes to server code aren't taking effect**
 Your MCP client keeps the server process alive. Restart the client (e.g. quit and relaunch Claude Desktop) to pick up code changes.
 
 **`field_values` not updating frontmatter**
 Check that the key names exactly match the YAML frontmatter keys in the template (case-sensitive). Use `fields_applied` in the response to confirm what was actually written.
+
+## Migrating from obsidian-mcp v2
+
+See [MIGRATION.md](MIGRATION.md) for upgrade steps.
 
 ## License
 

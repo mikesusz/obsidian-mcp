@@ -1,64 +1,17 @@
-"""Vault operations for an Obsidian vault (read + controlled write)."""
+"""Vault operations for a markdown folder (read + controlled write)."""
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
-import json
-
 import frontmatter
 
 
 IGNORED_DIRS = {".obsidian"}
-
-CONFIG_FILENAME = ".obsidian-mcp.config.json"
-
-# Default writable notes used when no config file is present in the vault.
-_DEFAULT_WRITABLE_NOTES: dict[str, str] = {
-    "__INBOX.md": "Quick capture inbox",
-    "__scratch.md": "Temporary scratch pad",
-}
-
-
-def _load_writable_notes(vault_path: str) -> dict[str, str]:
-    """Load writable notes from vault config file, falling back to defaults."""
-    config_path = Path(vault_path).expanduser().resolve() / CONFIG_FILENAME
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            entries = config.get("writable_notes", [])
-            return {entry["path"]: entry["description"] for entry in entries}
-        except (KeyError, json.JSONDecodeError, OSError):
-            pass  # Fall through to defaults on any parse error
-    return _DEFAULT_WRITABLE_NOTES
-
-
-class NoteInfo(TypedDict):
-    title: str
-    path: str
-    size: int
-    modified: str
-
-
-class NoteContent(TypedDict):
-    title: str
-    path: str
-    content: str
-    frontmatter: dict
-    modified: str
-    size: int
-
-
-class SearchResult(TypedDict):
-    title: str
-    path: str
-    snippet: str
-    relevance_score: float
 
 
 def _resolve_vault(vault_path: str) -> Path:
@@ -90,6 +43,29 @@ def _note_title(path: Path) -> str:
 
 def _relative_str(path: Path, vault_root: Path) -> str:
     return str(path.relative_to(vault_root))
+
+
+class NoteInfo(TypedDict):
+    title: str
+    path: str
+    size: int
+    modified: str
+
+
+class NoteContent(TypedDict):
+    title: str
+    path: str
+    content: str
+    frontmatter: dict
+    modified: str
+    size: int
+
+
+class SearchResult(TypedDict):
+    title: str
+    path: str
+    snippet: str
+    relevance_score: float
 
 
 def list_notes(vault_path: str, folder: str | None = None) -> list[NoteInfo]:
@@ -226,8 +202,7 @@ def search_notes(vault_path: str, query: str, limit: int = 10) -> list[SearchRes
 
 class WritableNoteInfo(TypedDict):
     path: str
-    exists: bool
-    purpose: str
+    access_level: str
 
 
 class AppendResult(TypedDict):
@@ -238,16 +213,29 @@ class AppendResult(TypedDict):
 
 
 def list_writable_notes(vault_path: str) -> dict[str, list[WritableNoteInfo]]:
-    """Return the whitelist of writable notes with existence status."""
+    """Return all notes that agents can append to (agent_access: append or edit, or no frontmatter)."""
     root = _resolve_vault(vault_path)
-    notes = [
-        WritableNoteInfo(
-            path=note_path,
-            exists=(root / note_path).exists(),
-            purpose=purpose,
+    notes: list[WritableNoteInfo] = []
+
+    for md_file in sorted(root.rglob("*.md")):
+        if _is_ignored(md_file, root):
+            continue
+        try:
+            post = frontmatter.loads(md_file.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+
+        access = _normalize_access(post.metadata.get("agent_access", "append"))
+        if access not in ("append", "edit"):
+            continue
+
+        notes.append(
+            WritableNoteInfo(
+                path=_relative_str(md_file, root),
+                access_level=access,
+            )
         )
-        for note_path, purpose in _load_writable_notes(vault_path).items()
-    ]
+
     return {"writable_notes": notes}
 
 
@@ -257,23 +245,25 @@ def append_to_note(
     content: str,
     add_timestamp: bool = True,
 ) -> AppendResult:
-    """Append content to a whitelisted note, optionally prefixed with a timestamp heading."""
-    # Safety: exact whitelist lookup — also implicitly blocks path traversal
-    # because traversal strings like "../etc/passwd" are simply not in the dict.
-    writable_notes = _load_writable_notes(vault_path)
-    if note_path not in writable_notes:
-        raise PermissionError(
-            f"'{note_path}' is not in the writable whitelist. "
-            f"Writable notes: {list(writable_notes)}"
-        )
-
-    # Belt-and-suspenders: reject anything with a path separator even if
-    # someone somehow extended WRITABLE_NOTES with a subfolder entry.
-    if "/" in note_path or "\\" in note_path:
-        raise ValueError("note_path must be a filename, not a path")
-
+    """Append content to any note with agent_access: append or edit. Creates the file if needed."""
     root = _resolve_vault(vault_path)
-    full_path = root / note_path
+    full_path = (root / note_path).resolve()
+
+    if not full_path.is_relative_to(root):
+        raise ValueError("note_path escapes vault root")
+    if full_path.suffix.lower() != ".md":
+        raise ValueError(f"Not a markdown file: {note_path}")
+
+    # If the file exists, verify frontmatter permission.
+    # If it doesn't exist yet, default access is 'append' — allow creation.
+    if full_path.exists():
+        allowed, current = _check_agent_access(full_path, "append")
+        if not allowed:
+            raise PermissionError(
+                f"Insufficient permissions. This note has agent_access: '{current}', "
+                "but this operation requires: 'append' or higher. "
+                "Add agent_access: 'append' or 'edit' to the note's frontmatter to enable this."
+            )
 
     if add_timestamp:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -360,7 +350,7 @@ def _replace_placeholders(content: str) -> str:
 def _extract_template_description(content: str) -> str:
     """Pull a description from the first line if it's a comment, otherwise generic."""
     first_line = content.lstrip().split("\n")[0] if content.strip() else ""
-    # Obsidian block comment: %% some description %%
+    # Block comment: %% some description %%
     if first_line.startswith("%%"):
         inner = first_line.strip("%").strip()
         if inner:
